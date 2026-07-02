@@ -12,6 +12,7 @@ import java.util.UUID;
 
 import org.bukkit.Bukkit;
 import org.bukkit.ChatColor;
+import org.bukkit.DyeColor;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -757,7 +758,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             }
 
             showCoreGlow(player, coreLocation);
-            player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 40, 0, true, true, true));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 40, 1, true, true, true));
         }
     }
 
@@ -774,7 +775,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
                 spawned.setSilent(true);
                 spawned.setAI(false);
                 spawned.setCollidable(false);
-                spawned.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, false));
+                spawned.setColor(DyeColor.LIGHT_BLUE);
             });
             coreGlowDisplays.put(playerId, display);
             player.showEntity(this, display);
