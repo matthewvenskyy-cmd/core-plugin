@@ -24,12 +24,14 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
+import org.bukkit.entity.BlockDisplay;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockDamageEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
@@ -80,6 +82,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     private final Map<UUID, Long> selfdestructCooldowns = new HashMap<>();
     private final Map<UUID, Boolean> pendingCoreHoldDeaths = new HashMap<>();
     private final Map<UUID, Boolean> pendingSelfdestructDeaths = new HashMap<>();
+    private final Map<UUID, BlockDisplay> coreGlowDisplays = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -98,6 +101,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         Objects.requireNonNull(getCommand("selfdestruct")).setExecutor(this);
         startCorebreakerDisplayTask();
         startCoreHoldTimerTask();
+        startCoreGlowTask();
         startExpiredCoreCleanupTask();
 
         getLogger().info("CorePlugin enabled.");
@@ -105,6 +109,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
 
     @Override
     public void onDisable() {
+        clearCoreGlowDisplays();
         saveData();
         getLogger().info("CorePlugin disabled.");
     }
@@ -167,6 +172,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
 
     @EventHandler
     public void onPlayerQuit(PlayerQuitEvent event) {
+        removeCoreGlow(event.getPlayer().getUniqueId());
         data.set(playerPath(event.getPlayer().getUniqueId()) + ".last-seen", System.currentTimeMillis());
         saveData();
     }
@@ -199,6 +205,12 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             if (isCorebreaker(event.getPlayer().getInventory().getItemInMainHand())) {
                 event.setCancelled(true);
                 send(event.getPlayer(), "&cCorebreakers can only break player cores.");
+                return;
+            }
+
+            CoreBlock nearbyCore = getNearbyCore(block, 1);
+            if (nearbyCore != null) {
+                alertCoreOwner(nearbyCore, event.getPlayer(), block);
             }
             return;
         }
@@ -234,8 +246,8 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         consumeOldestKill(breaker);
         updateCorebreakers(breaker);
         removeCore(core.ownerId());
+        removeCoreGlow(core.ownerId());
         block.setType(Material.AIR);
-        breaker.addPotionEffect(new PotionEffect(PotionEffectType.MINING_FATIGUE, coreBreakMiningFatigueSeconds * 20, 0, true, true, true));
 
         if (owner != null) {
             pendingCoreDeaths.put(owner.getUniqueId(), block.getLocation().add(0.5, 0.5, 0.5));
@@ -244,6 +256,15 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         }
 
         send(breaker, "&aYou destroyed " + core.ownerName() + "'s core.");
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onBlockDamage(BlockDamageEvent event) {
+        CoreBlock nearbyCore = getNearbyCore(event.getBlock(), 2);
+        if (nearbyCore != null) {
+            int durationSeconds = Math.min(coreBreakMiningFatigueSeconds, 3);
+            event.getPlayer().addPotionEffect(new PotionEffect(PotionEffectType.MINING_FATIGUE, durationSeconds * 20, 0, true, true, true));
+        }
     }
 
     @EventHandler(priority = EventPriority.MONITOR)
@@ -298,14 +319,14 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             }
 
             data.set(base + ".needs-core-on-respawn", false);
-            Bukkit.getScheduler().runTaskLater(this, () -> giveOrDrop(player, createCoreItem(player)), 1L);
+            Bukkit.getScheduler().runTaskLater(this, () -> giveCoreItemIfMissing(player), 1L);
             saveData();
             return;
         }
 
         if (data.getBoolean(base + ".needs-core-item-on-respawn", false)) {
             data.set(base + ".needs-core-item-on-respawn", false);
-            Bukkit.getScheduler().runTaskLater(this, () -> giveOrDrop(player, createCoreItem(player)), 1L);
+            Bukkit.getScheduler().runTaskLater(this, () -> giveCoreItemIfMissing(player), 1L);
             saveData();
         }
 
@@ -502,6 +523,8 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         }
 
         removeCore(player.getUniqueId());
+        removeCoreGlow(player.getUniqueId());
+        dropInventoryForSelfdestruct(player);
         pendingSelfdestructDeaths.put(player.getUniqueId(), true);
         selfdestructCooldowns.put(player.getUniqueId(), now + selfdestructCooldownSeconds * 1000L);
         send(player, "&cYour core selfdestructed.");
@@ -710,6 +733,71 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         }.runTaskTimer(this, 20L, 20L);
     }
 
+    private void startCoreGlowTask() {
+        new BukkitRunnable() {
+            @Override
+            public void run() {
+                updateCoreGlows();
+            }
+        }.runTaskTimer(this, 10L, 10L);
+    }
+
+    private void updateCoreGlows() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            Location coreLocation = getCoreLocation(player.getUniqueId());
+            if (coreLocation == null || coreLocation.getWorld() == null || !player.getWorld().equals(coreLocation.getWorld())) {
+                removeCoreGlow(player.getUniqueId());
+                continue;
+            }
+
+            if (player.getLocation().distanceSquared(coreLocation.clone().add(0.5, 0.5, 0.5)) > 25.0) {
+                removeCoreGlow(player.getUniqueId());
+                continue;
+            }
+
+            showCoreGlow(player, coreLocation);
+        }
+    }
+
+    private void showCoreGlow(Player player, Location coreLocation) {
+        UUID playerId = player.getUniqueId();
+        BlockDisplay display = coreGlowDisplays.get(playerId);
+        Location displayLocation = coreLocation.clone().add(0.0, 0.0, 0.0);
+        if (display == null || display.isDead() || !display.getWorld().equals(coreLocation.getWorld())) {
+            display = coreLocation.getWorld().spawn(displayLocation, BlockDisplay.class, spawned -> {
+                spawned.setBlock(coreMaterial.createBlockData());
+                spawned.setGlowing(true);
+                spawned.setVisibleByDefault(false);
+                spawned.setPersistent(false);
+                spawned.setInvulnerable(true);
+            });
+            coreGlowDisplays.put(playerId, display);
+            player.showEntity(this, display);
+            return;
+        }
+
+        if (display.getLocation().distanceSquared(displayLocation) > 0.01) {
+            display.teleport(displayLocation);
+        }
+        player.showEntity(this, display);
+    }
+
+    private void removeCoreGlow(UUID playerId) {
+        BlockDisplay display = coreGlowDisplays.remove(playerId);
+        if (display != null && !display.isDead()) {
+            display.remove();
+        }
+    }
+
+    private void clearCoreGlowDisplays() {
+        for (BlockDisplay display : coreGlowDisplays.values()) {
+            if (display != null && !display.isDead()) {
+                display.remove();
+            }
+        }
+        coreGlowDisplays.clear();
+    }
+
     private void tickCoreHoldTimers() {
         boolean changed = false;
         for (Player player : Bukkit.getOnlinePlayers()) {
@@ -814,6 +902,40 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         long offlineMillis = System.currentTimeMillis() - lastSeen;
         long graceMillis = offlineProtectionGraceSeconds * 1000L;
         return offlineMillis >= graceMillis;
+    }
+
+    private CoreBlock getNearbyCore(Block block, int radius) {
+        World world = block.getWorld();
+        int baseX = block.getX();
+        int baseY = block.getY();
+        int baseZ = block.getZ();
+        for (int x = baseX - radius; x <= baseX + radius; x++) {
+            for (int y = baseY - radius; y <= baseY + radius; y++) {
+                for (int z = baseZ - radius; z <= baseZ + radius; z++) {
+                    CoreBlock core = getCoreBlock(world.getBlockAt(x, y, z));
+                    if (core != null) {
+                        return core;
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    private void alertCoreOwner(CoreBlock core, Player breaker, Block block) {
+        Player owner = Bukkit.getPlayer(core.ownerId());
+        if (owner == null) {
+            return;
+        }
+
+        owner.sendTitle(
+                color("&cCore Alert"),
+                color("&f" + breaker.getName() + " broke a block near your core."),
+                5,
+                45,
+                10);
+        send(owner, "&cBlock broken near your core at &e"
+                + block.getX() + " " + block.getY() + " " + block.getZ() + "&c.");
     }
 
     private void showCoreHoldTimer(Player player, int seconds, boolean charging) {
@@ -960,6 +1082,40 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         Map<Integer, ItemStack> leftover = player.getInventory().addItem(item);
         for (ItemStack stack : leftover.values()) {
             player.getWorld().dropItemNaturally(player.getLocation(), stack);
+        }
+    }
+
+    private void giveCoreItemIfMissing(Player player) {
+        if (getCoreLocation(player.getUniqueId()) == null && !hasOwnCoreItem(player)) {
+            giveOrDrop(player, createCoreItem(player));
+        }
+    }
+
+    private void dropInventoryForSelfdestruct(Player player) {
+        Location location = player.getLocation();
+        PlayerInventory inventory = player.getInventory();
+        for (int i = 0; i < inventory.getSize(); i++) {
+            ItemStack item = inventory.getItem(i);
+            if (item != null && !item.getType().isAir() && !isBoundItem(item)) {
+                player.getWorld().dropItemNaturally(location, item);
+                inventory.setItem(i, null);
+            }
+        }
+
+        ItemStack[] armor = inventory.getArmorContents();
+        for (int i = 0; i < armor.length; i++) {
+            ItemStack item = armor[i];
+            if (item != null && !item.getType().isAir() && !isBoundItem(item)) {
+                player.getWorld().dropItemNaturally(location, item);
+                armor[i] = null;
+            }
+        }
+        inventory.setArmorContents(armor);
+
+        ItemStack offhand = inventory.getItemInOffHand();
+        if (!offhand.getType().isAir() && !isBoundItem(offhand)) {
+            player.getWorld().dropItemNaturally(location, offhand);
+            inventory.setItemInOffHand(null);
         }
     }
 

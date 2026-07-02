@@ -5,7 +5,7 @@ core:
   offline-core-expire-days: 30
   selfdestruct-cooldown-seconds: 300
   teleport-delay-seconds: 3
-  break-mining-fatigue-seconds: 300
+  break-mining-fatigue-seconds: 3
   hold-max-seconds: 300
   respawn-search-radius: 3
   give-starting-corebreaker: true
