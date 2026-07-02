@@ -6,6 +6,8 @@ Paper plugin for Minecraft 1.21.11 that makes each player protect a placed core.
 
 - New players receive one player core and one Corebreaker.
 - A player core is a special beacon block. Place it to anchor your normal respawns.
+- Right-clicking a placed core does not open the normal beacon menu.
+- Beacon base blocks cannot be placed under a core, and cores cannot be placed on beacon bases.
 - Normal deaths respawn you near your placed core, if there is a safe space nearby.
 - If the core area is blocked or unsafe, vanilla bed/world spawn behavior is used.
 - Player cores can only be destroyed with a Corebreaker.
@@ -13,7 +15,7 @@ Paper plugin for Minecraft 1.21.11 that makes each player protect a placed core.
 - Destroying another player's core spends one Corebreaker charge, kills that player, and drops their death items at the core.
 - After a core death, the victim respawns at their bed if they have one and receives a new core item.
 - `/core` teleports you to your core after 3 seconds.
-- `/selfdestruct` removes your placed core and returns it as an item, with a configurable cooldown.
+- `/selfdestruct` destroys your placed core, kills you, drops your inventory, and returns a new core on respawn.
 - `/kills` shows your unique kill queue in the order charges will be consumed.
 - Holding your unplaced core drains a 300 second core hold timer. If it reaches 0, you die.
 - Placing your core refills the hold timer by 1 second per second, up to the 300 second maximum.
@@ -23,10 +25,12 @@ Paper plugin for Minecraft 1.21.11 that makes each player protect a placed core.
 Corebreaker charges are based on your unique kill queue.
 
 - Killing a player normally adds that player's name to the back of your `/kills` queue.
+- Every player starts with one `default` charge.
 - Re-killing a player already in your queue does not add another charge.
 - Breaking a core removes the oldest name from the front of your queue.
 - Corebreaker items only show the current charge count.
 - Corebreakers cannot be dropped, traded, picked up, or placed into containers.
+- Corebreakers cannot break normal blocks and do not lose durability.
 - If your inventory is full and the plugin must restore your Corebreaker, it puts it in hotbar slot 9 and drops the displaced normal item.
 
 ## Abuse Protection

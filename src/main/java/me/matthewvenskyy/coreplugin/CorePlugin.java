@@ -28,6 +28,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityPickupItemEvent;
@@ -37,6 +38,8 @@ import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.inventory.InventoryType;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerItemDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -76,6 +79,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     private final Map<UUID, Location> pendingCoreDeaths = new HashMap<>();
     private final Map<UUID, Long> selfdestructCooldowns = new HashMap<>();
     private final Map<UUID, Boolean> pendingCoreHoldDeaths = new HashMap<>();
+    private final Map<UUID, Boolean> pendingSelfdestructDeaths = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -143,6 +147,10 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         if (!data.contains(base + ".core-hold-seconds")) {
             data.set(base + ".core-hold-seconds", coreHoldMaxSeconds);
         }
+        if (!data.getBoolean(base + ".default-charge-granted", false)) {
+            addDefaultCharge(player.getUniqueId());
+            data.set(base + ".default-charge-granted", true);
+        }
         if (!data.getBoolean(base + ".initialized", false)) {
             if (giveStartingCore) {
                 giveOrDrop(player, createCoreItem(player));
@@ -166,11 +174,17 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     @EventHandler(ignoreCancelled = true)
     public void onCorePlace(BlockPlaceEvent event) {
         ItemStack item = event.getItemInHand();
+        Player player = event.getPlayer();
+        if (!isCoreItem(item) && wouldActivateCoreBeacon(event.getBlockPlaced())) {
+            event.setCancelled(true);
+            send(player, "&cBeacon base blocks cannot be placed under a core.");
+            return;
+        }
+
         if (!isCoreItem(item)) {
             return;
         }
 
-        Player player = event.getPlayer();
         String itemOwnerId = getCoreItemOwnerId(item);
         if (itemOwnerId == null || !itemOwnerId.equals(player.getUniqueId().toString())) {
             event.setCancelled(true);
@@ -191,6 +205,12 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             return;
         }
 
+        if (hasBeaconBaseBelow(block.getLocation())) {
+            event.setCancelled(true);
+            send(player, "&cCores cannot be placed on beacon bases.");
+            return;
+        }
+
         PersistentDataContainer container = tileState.getPersistentDataContainer();
         container.set(coreOwnerKey, PersistentDataType.STRING, player.getUniqueId().toString());
         container.set(coreOwnerNameKey, PersistentDataType.STRING, player.getName());
@@ -204,6 +224,10 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         Block block = event.getBlock();
         CoreBlock core = getCoreBlock(block);
         if (core == null) {
+            if (isCorebreaker(event.getPlayer().getInventory().getItemInMainHand())) {
+                event.setCancelled(true);
+                send(event.getPlayer(), "&cCorebreakers can only break player cores.");
+            }
             return;
         }
 
@@ -256,6 +280,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         Player killer = player.getKiller();
         Location coreDeathLocation = pendingCoreDeaths.remove(player.getUniqueId());
         boolean coreHoldDeath = pendingCoreHoldDeaths.remove(player.getUniqueId()) != null;
+        boolean selfdestructDeath = pendingSelfdestructDeaths.remove(player.getUniqueId()) != null;
         boolean hadCoreItem = removeBoundItemsFromDrops(event.getDrops());
 
         if (coreDeathLocation != null) {
@@ -271,7 +296,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             return;
         }
 
-        if (coreHoldDeath) {
+        if (coreHoldDeath || selfdestructDeath) {
             data.set(playerPath(player.getUniqueId()) + ".needs-core-item-on-respawn", true);
             setCoreHoldSeconds(player.getUniqueId(), coreHoldMaxSeconds);
             saveData();
@@ -383,6 +408,22 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         }
     }
 
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerInteract(PlayerInteractEvent event) {
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK
+                && event.getClickedBlock() != null
+                && getCoreBlock(event.getClickedBlock()) != null) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler(ignoreCancelled = true)
+    public void onPlayerItemDamage(PlayerItemDamageEvent event) {
+        if (isCorebreaker(event.getItem())) {
+            event.setCancelled(true);
+        }
+    }
+
     private void showKills(Player player) {
         List<String> kills = getKillQueue(player.getUniqueId());
         if (kills.isEmpty()) {
@@ -425,9 +466,10 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         }
 
         removeCore(player.getUniqueId());
-        giveOrDrop(player, createCoreItem(player));
+        pendingSelfdestructDeaths.put(player.getUniqueId(), true);
         selfdestructCooldowns.put(player.getUniqueId(), now + selfdestructCooldownSeconds * 1000L);
-        send(player, "&aYour core was destroyed and returned to you.");
+        send(player, "&cYour core selfdestructed.");
+        player.setHealth(0.0);
     }
 
     private void teleportToCore(Player player) {
@@ -469,6 +511,18 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         data.set(base + ".kills", kills);
         data.set(base + ".kill-names." + victimId, victim.getName());
         saveData();
+    }
+
+    private void addDefaultCharge(UUID playerId) {
+        List<String> kills = getKillQueue(playerId);
+        if (kills.contains("default")) {
+            return;
+        }
+
+        kills.add("default");
+        String base = playerPath(playerId);
+        data.set(base + ".kills", kills);
+        data.set(base + ".kill-names.default", "default");
     }
 
     private void consumeOldestKill(Player player) {
@@ -526,6 +580,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         ItemMeta meta = item.getItemMeta();
         meta.setDisplayName(color(getConfig().getString("corebreaker.name", "&cCorebreaker")));
         meta.setLore(List.of(color("&7Charges: &e" + charges)));
+        meta.setUnbreakable(true);
         meta.getPersistentDataContainer().set(corebreakerKey, PersistentDataType.BYTE, (byte) 1);
         item.setItemMeta(meta);
     }
@@ -630,6 +685,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
                     setCoreHoldSeconds(playerId, Math.min(coreHoldMaxSeconds, seconds + 1));
                     changed = true;
                 }
+                showCoreHoldTimer(player, getCoreHoldSeconds(playerId), true);
                 continue;
             }
 
@@ -640,6 +696,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             int seconds = Math.max(0, getCoreHoldSeconds(playerId) - 1);
             setCoreHoldSeconds(playerId, seconds);
             changed = true;
+            showCoreHoldTimer(player, seconds, false);
 
             if (seconds == 60 || seconds == 30 || seconds == 10 || seconds <= 5 && seconds > 0) {
                 send(player, "&cPlace your core within " + seconds + " seconds or you will die.");
@@ -721,6 +778,63 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         long offlineMillis = System.currentTimeMillis() - lastSeen;
         long graceMillis = offlineProtectionGraceSeconds * 1000L;
         return offlineMillis >= graceMillis;
+    }
+
+    private void showCoreHoldTimer(Player player, int seconds, boolean charging) {
+        ChatColor color = charging ? ChatColor.AQUA : ChatColor.RED;
+        String state = charging ? "charging" : "holding";
+        player.sendActionBar(color + "Core timer " + ChatColor.YELLOW + seconds + "s " + ChatColor.GRAY + state);
+    }
+
+    private boolean wouldActivateCoreBeacon(Block placedBlock) {
+        if (!isBeaconBaseMaterial(placedBlock.getType())) {
+            return false;
+        }
+
+        World world = placedBlock.getWorld();
+        int x = placedBlock.getX();
+        int y = placedBlock.getY();
+        int z = placedBlock.getZ();
+        for (int level = 1; level <= 4; level++) {
+            for (int coreX = x - level; coreX <= x + level; coreX++) {
+                for (int coreZ = z - level; coreZ <= z + level; coreZ++) {
+                    if (getCoreBlock(world.getBlockAt(coreX, y + level, coreZ)) != null) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean hasBeaconBaseBelow(Location coreLocation) {
+        World world = coreLocation.getWorld();
+        if (world == null) {
+            return false;
+        }
+
+        int coreX = coreLocation.getBlockX();
+        int coreY = coreLocation.getBlockY();
+        int coreZ = coreLocation.getBlockZ();
+        for (int level = 1; level <= 4; level++) {
+            int y = coreY - level;
+            for (int x = coreX - level; x <= coreX + level; x++) {
+                for (int z = coreZ - level; z <= coreZ + level; z++) {
+                    if (isBeaconBaseMaterial(world.getBlockAt(x, y, z).getType())) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean isBeaconBaseMaterial(Material material) {
+        return material == Material.IRON_BLOCK
+                || material == Material.GOLD_BLOCK
+                || material == Material.DIAMOND_BLOCK
+                || material == Material.EMERALD_BLOCK
+                || material == Material.NETHERITE_BLOCK;
     }
 
     private CoreBlock getCoreBlock(Block block) {
