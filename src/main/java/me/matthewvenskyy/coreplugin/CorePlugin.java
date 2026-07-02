@@ -185,38 +185,10 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             return;
         }
 
-        String itemOwnerId = getCoreItemOwnerId(item);
-        if (itemOwnerId == null || !itemOwnerId.equals(player.getUniqueId().toString())) {
-            event.setCancelled(true);
-            send(player, "&cYou cannot place another player's core.");
-            return;
-        }
-
-        if (getCoreLocation(player.getUniqueId()) != null) {
-            event.setCancelled(true);
-            send(player, "&cYou already have a placed core. Use /selfdestruct to move it.");
-            return;
-        }
-
         Block block = event.getBlockPlaced();
-        if (block.getType() != coreMaterial || !(block.getState() instanceof TileState tileState)) {
+        if (!tryRegisterPlacedCore(player, item, block)) {
             event.setCancelled(true);
-            send(player, "&cThis core material cannot store ownership data.");
-            return;
         }
-
-        if (hasBeaconBaseBelow(block.getLocation())) {
-            event.setCancelled(true);
-            send(player, "&cCores cannot be placed on beacon bases.");
-            return;
-        }
-
-        PersistentDataContainer container = tileState.getPersistentDataContainer();
-        container.set(coreOwnerKey, PersistentDataType.STRING, player.getUniqueId().toString());
-        container.set(coreOwnerNameKey, PersistentDataType.STRING, player.getName());
-        tileState.update(true);
-        setCoreLocation(player.getUniqueId(), block.getLocation());
-        send(player, "&aCore placed. Normal deaths now respawn you near it.");
     }
 
     @EventHandler(ignoreCancelled = true, priority = EventPriority.HIGH)
@@ -410,11 +382,75 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
 
     @EventHandler(ignoreCancelled = true)
     public void onPlayerInteract(PlayerInteractEvent event) {
-        if (event.getAction() == Action.RIGHT_CLICK_BLOCK
-                && event.getClickedBlock() != null
-                && getCoreBlock(event.getClickedBlock()) != null) {
-            event.setCancelled(true);
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+            return;
         }
+
+        if (getCoreBlock(event.getClickedBlock()) != null) {
+            event.setCancelled(true);
+            return;
+        }
+
+        Player player = event.getPlayer();
+        ItemStack item = event.getItem();
+        if (!isCoreItem(item) || event.getBlockFace() == BlockFace.SELF) {
+            return;
+        }
+
+        Block target = event.getClickedBlock().getRelative(event.getBlockFace());
+        if (!canManuallyPlaceCoreAt(target)) {
+            return;
+        }
+
+        event.setCancelled(true);
+        target.setType(coreMaterial);
+        if (!tryRegisterPlacedCore(player, item, target)) {
+            target.setType(Material.AIR);
+            return;
+        }
+
+        item.setAmount(item.getAmount() - 1);
+        player.swingMainHand();
+    }
+
+    private boolean tryRegisterPlacedCore(Player player, ItemStack item, Block block) {
+        String itemOwnerId = getCoreItemOwnerId(item);
+        if (itemOwnerId == null || !itemOwnerId.equals(player.getUniqueId().toString())) {
+            send(player, "&cYou cannot place another player's core.");
+            return false;
+        }
+
+        if (getCoreLocation(player.getUniqueId()) != null) {
+            send(player, "&cYou already have a placed core. Use /selfdestruct to move it.");
+            return false;
+        }
+
+        if (block.getType() != coreMaterial || !(block.getState() instanceof TileState tileState)) {
+            send(player, "&cThis core material cannot store ownership data.");
+            return false;
+        }
+
+        if (hasBeaconBaseBelow(block.getLocation())) {
+            send(player, "&cCores cannot be placed on beacon bases.");
+            return false;
+        }
+
+        PersistentDataContainer container = tileState.getPersistentDataContainer();
+        container.set(coreOwnerKey, PersistentDataType.STRING, player.getUniqueId().toString());
+        container.set(coreOwnerNameKey, PersistentDataType.STRING, player.getName());
+        tileState.update(true);
+        setCoreLocation(player.getUniqueId(), block.getLocation());
+        send(player, "&aCore placed. Normal deaths now respawn you near it.");
+        return true;
+    }
+
+    private boolean canManuallyPlaceCoreAt(Block block) {
+        Material type = block.getType();
+        return type == Material.AIR
+                || type == Material.CAVE_AIR
+                || type == Material.VOID_AIR
+                || type == Material.WATER
+                || type == Material.LAVA;
     }
 
     @EventHandler(ignoreCancelled = true)
