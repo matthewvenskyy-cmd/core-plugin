@@ -16,7 +16,7 @@ Paper plugin for Minecraft 1.21.11 that makes each player protect a placed core.
 - `/selfdestruct` removes your placed core and returns it as an item, with a configurable cooldown.
 - `/kills` shows your unique kill queue in the order charges will be consumed.
 - Holding your unplaced core drains a 300 second core hold timer. If it reaches 0, you die.
-- Placing your core refills the hold timer up to the 300 second maximum.
+- Placing your core refills the hold timer by 1 second per second, up to the 300 second maximum.
 
 ## Corebreakers and Kills
 
@@ -40,7 +40,7 @@ The default config starts conservative:
 - `/selfdestruct` has a 5 minute cooldown by default.
 - Core items cannot be picked up by other players, dropped manually, or placed into containers.
 
-The core hold timer is intentionally simple: carrying your unplaced core spends your 300 seconds, and having it placed recharges that time. This lets players move bases, but it makes hiding the core in inventory a temporary panic option instead of a permanent strategy.
+The core hold timer is intentionally simple: carrying your unplaced core spends your 300 seconds, and having it placed recharges that time at 1 second per second. This lets players move bases, but it makes hiding the core in inventory a temporary panic option instead of a permanent strategy.
 
 ## Stack
 

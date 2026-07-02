@@ -196,7 +196,6 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
         container.set(coreOwnerNameKey, PersistentDataType.STRING, player.getName());
         tileState.update(true);
         setCoreLocation(player.getUniqueId(), block.getLocation());
-        setCoreHoldSeconds(player.getUniqueId(), coreHoldMaxSeconds);
         send(player, "&aCore placed. Normal deaths now respawn you near it.");
     }
 
