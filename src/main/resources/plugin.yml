@@ -1,0 +1,20 @@
+name: CorePlugin
+version: '${project.version}'
+main: me.matthewvenskyy.coreplugin.CorePlugin
+api-version: '1.21'
+author: matthewvenskyy-cmd
+description: Core breaking PvP/building gameplay plugin
+commands:
+  kills:
+    description: Shows your unique kill queue and corebreaker charges.
+    usage: /kills
+  core:
+    description: Teleports you to your core after a short delay.
+    usage: /core
+  selfdestruct:
+    description: Destroys your placed core and returns it to you.
+    usage: /selfdestruct
+permissions:
+  coreplugin.selfdestruct:
+    description: Allows a player to destroy their own core.
+    default: true

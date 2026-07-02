@@ -1,0 +1,33 @@
+target/
+*.class
+
+# IDE/local files
+.idea/
+*.iml
+.classpath
+.project
+.settings/
+.vscode/
+.claude/
+
+# Local secrets
+*.json
+!package.json
+!package-lock.json
+!.github/**/*.json
+secrets/
+.secrets/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Runtime/server data
+server/
+run/
+logs/
+plugins/
+world/
+world_nether/
+world_the_end/
+*.log

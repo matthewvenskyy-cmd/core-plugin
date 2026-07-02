@@ -1,0 +1,19 @@
+core:
+  block-material: BEACON
+  require-online-owner-to-break: true
+  offline-protection-grace-seconds: 600
+  offline-core-expire-days: 30
+  selfdestruct-cooldown-seconds: 300
+  teleport-delay-seconds: 3
+  break-mining-fatigue-seconds: 300
+  hold-max-seconds: 300
+  respawn-search-radius: 3
+  give-starting-corebreaker: true
+  give-starting-core: true
+
+corebreaker:
+  material: NETHERITE_PICKAXE
+  name: "&cCorebreaker"
+
+messages:
+  prefix: "&8[&cCore&8] &r"
