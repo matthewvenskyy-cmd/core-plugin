@@ -6,14 +6,14 @@ Paper plugin for Minecraft 1.21.11 that makes each player protect a placed core.
 
 - New players receive one player core and one Corebreaker.
 - A player core is a special beacon block. Place it to anchor your normal respawns.
-- When you are within 5 blocks of your own core, it gets an owner-only glowing outline visible through walls.
+- When you are within 5 blocks of your own core, it gets an owner-only glowing outline visible through walls and you receive regeneration.
 - Right-clicking a placed core does not open the normal beacon menu.
 - Beacon base blocks cannot be placed under a core, and cores cannot be placed on beacon bases.
 - Normal deaths respawn you near your placed core, if there is a safe space nearby.
 - If the core area is blocked or unsafe, vanilla bed/world spawn behavior is used.
 - Player cores can only be destroyed with a Corebreaker.
-- Mining blocks within 2 blocks of a core gives short mining fatigue while mining there.
-- Breaking blocks touching or diagonal to a core sends the owner a title alert.
+- Mining blocks within 2 blocks of someone else's core gives short mining fatigue while mining there.
+- Breaking blocks touching or diagonal to someone else's core sends the owner a title alert.
 - Destroying another player's core spends one Corebreaker charge, kills that player, and drops their death items at the core.
 - After a core death, the victim respawns at their bed if they have one and receives a new core item.
 - `/core` teleports you to your core after 3 seconds.

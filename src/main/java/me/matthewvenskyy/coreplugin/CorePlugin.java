@@ -24,8 +24,9 @@ import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabExecutor;
 import org.bukkit.configuration.file.FileConfiguration;
 import org.bukkit.configuration.file.YamlConfiguration;
-import org.bukkit.entity.BlockDisplay;
+import org.bukkit.entity.Entity;
 import org.bukkit.entity.Player;
+import org.bukkit.entity.Shulker;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.EventPriority;
 import org.bukkit.event.Listener;
@@ -82,7 +83,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     private final Map<UUID, Long> selfdestructCooldowns = new HashMap<>();
     private final Map<UUID, Boolean> pendingCoreHoldDeaths = new HashMap<>();
     private final Map<UUID, Boolean> pendingSelfdestructDeaths = new HashMap<>();
-    private final Map<UUID, BlockDisplay> coreGlowDisplays = new HashMap<>();
+    private final Map<UUID, Entity> coreGlowDisplays = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -209,7 +210,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             }
 
             CoreBlock nearbyCore = getNearbyCore(block, 1);
-            if (nearbyCore != null) {
+            if (nearbyCore != null && !nearbyCore.ownerId().equals(event.getPlayer().getUniqueId())) {
                 alertCoreOwner(nearbyCore, event.getPlayer(), block);
             }
             return;
@@ -261,7 +262,7 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     @EventHandler(ignoreCancelled = true)
     public void onBlockDamage(BlockDamageEvent event) {
         CoreBlock nearbyCore = getNearbyCore(event.getBlock(), 2);
-        if (nearbyCore != null) {
+        if (nearbyCore != null && !nearbyCore.ownerId().equals(event.getPlayer().getUniqueId())) {
             int durationSeconds = Math.min(coreBreakMiningFatigueSeconds, 3);
             event.getPlayer().addPotionEffect(new PotionEffect(PotionEffectType.MINING_FATIGUE, durationSeconds * 20, 0, true, true, true));
         }
@@ -756,20 +757,24 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
             }
 
             showCoreGlow(player, coreLocation);
+            player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 40, 0, true, true, true));
         }
     }
 
     private void showCoreGlow(Player player, Location coreLocation) {
         UUID playerId = player.getUniqueId();
-        BlockDisplay display = coreGlowDisplays.get(playerId);
-        Location displayLocation = coreLocation.clone().add(0.0, 0.0, 0.0);
+        Entity display = coreGlowDisplays.get(playerId);
+        Location displayLocation = coreLocation.clone().add(0.5, 0.0, 0.5);
         if (display == null || display.isDead() || !display.getWorld().equals(coreLocation.getWorld())) {
-            display = coreLocation.getWorld().spawn(displayLocation, BlockDisplay.class, spawned -> {
-                spawned.setBlock(coreMaterial.createBlockData());
+            display = coreLocation.getWorld().spawn(displayLocation, Shulker.class, spawned -> {
                 spawned.setGlowing(true);
                 spawned.setVisibleByDefault(false);
                 spawned.setPersistent(false);
                 spawned.setInvulnerable(true);
+                spawned.setSilent(true);
+                spawned.setAI(false);
+                spawned.setCollidable(false);
+                spawned.addPotionEffect(new PotionEffect(PotionEffectType.INVISIBILITY, Integer.MAX_VALUE, 0, false, false, false));
             });
             coreGlowDisplays.put(playerId, display);
             player.showEntity(this, display);
@@ -783,14 +788,14 @@ public class CorePlugin extends JavaPlugin implements Listener, TabExecutor {
     }
 
     private void removeCoreGlow(UUID playerId) {
-        BlockDisplay display = coreGlowDisplays.remove(playerId);
+        Entity display = coreGlowDisplays.remove(playerId);
         if (display != null && !display.isDead()) {
             display.remove();
         }
     }
 
     private void clearCoreGlowDisplays() {
-        for (BlockDisplay display : coreGlowDisplays.values()) {
+        for (Entity display : coreGlowDisplays.values()) {
             if (display != null && !display.isDead()) {
                 display.remove();
             }
